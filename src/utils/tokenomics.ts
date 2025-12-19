@@ -2,166 +2,131 @@ export interface SellerMetrics {
   monthlySalesVolume: number; // Number of orders per month
   returnRate: number; // Percentage (0-100)
   onTimeDeliveryRate: number; // Percentage (0-100)
-  cancellationRate: number; // Percentage (0-100)
-  inventoryAccuracy: number; // Percentage (0-100)
-  monthsOnPlatform: number; // Months since joining
+  ratings: number; // Rating score (0-100)
+  monthsOnPlatform: number; // Months since joining (for time decay calculation)
+  totalMarketSales?: number; // Total market sales (optional, defaults to estimated value)
 }
 
 export interface CalculationResult {
-  qualityScore: number; // 0-100
+  qualityScore: number; // 0-1 (normalized)
+  weeklyTokenReward: number;
   monthlyTokenReward: number;
-  penalties: number;
-  baseEmission: number;
-  qualityMultiplier: number;
+  sellerPool: number; // Current seller pool size
+  salesShare: number; // Seller's share of market sales
   timeDecayFactor: number;
   projection6Months: number;
   projection12Months: number;
   breakdown: {
-    returnRateScore: number;
-    deliveryScore: number;
-    cancellationScore: number;
-    inventoryScore: number;
+    returnRateComponent: number;
+    deliveryComponent: number;
+    ratingsComponent: number;
   };
   suggestions: string[];
 }
 
-// Constants
-const BASE_EMISSION_PER_ORDER = 0.1; // Base tokens per order
-const TIME_DECAY_RATE = 0.02; // 2% decay per month
-const MIN_QUALITY_SCORE = 50; // Minimum quality score to receive tokens
-const PENALTY_THRESHOLD_RETURNS = 15; // Return rate threshold for penalties
-const PENALTY_THRESHOLD_CANCELLATIONS = 10; // Cancellation rate threshold
+// Constants from PDF formula
+const TOTAL_SUPPLY = 1000000; // Total token supply (can be adjusted)
+const SBASE = 0.25 * TOTAL_SUPPLY; // 25% of total supply for seller pool
+const DELTA = 0.15; // Pool reduction rate (δ = 0.15)
+const MIN_QUALITY_SCORE = 0.6; // Minimum quality score (0-1) to receive tokens
+const WSALES = 0.5; // Weight for sales shares in allocation
+const WQUALITY = 0.5; // Weight for quality scores in allocation
+const WEEKS_PER_MONTH = 4.33; // Average weeks per month
+const DEFAULT_MARKET_SALES_MULTIPLIER = 100; // Default multiplier for market sales estimation
 
 /**
- * Calculate quality score based on seller metrics
- * Weighted average with emphasis on returns and delivery
+ * Calculate quality score based on PDF formula (10.2)
+ * quality_scores = 0.4 · (1 − return_rates) + 0.3 · on_time_deliverys + 0.3 · ratings
+ * All values normalized to 0-1 range
  */
 export function calculateQualityScore(metrics: SellerMetrics): {
   score: number;
   breakdown: CalculationResult['breakdown'];
 } {
-  // Return rate: lower is better (inverted)
-  const returnRateScore = Math.max(0, 100 - metrics.returnRate * 2);
+  // Normalize return rate: (1 - return_rate) where return_rate is 0-1
+  const returnRateNormalized = metrics.returnRate / 100; // Convert percentage to 0-1
+  const returnRateComponent = 0.4 * (1 - returnRateNormalized);
   
-  // Delivery performance: higher is better
-  const deliveryScore = metrics.onTimeDeliveryRate;
+  // Normalize delivery rate: on_time_delivery is 0-1
+  const deliveryRateNormalized = metrics.onTimeDeliveryRate / 100; // Convert percentage to 0-1
+  const deliveryComponent = 0.3 * deliveryRateNormalized;
   
-  // Cancellation rate: lower is better (inverted)
-  const cancellationScore = Math.max(0, 100 - metrics.cancellationRate * 3);
+  // Normalize ratings: ratings is 0-1
+  const ratingsNormalized = metrics.ratings / 100; // Convert percentage to 0-1
+  const ratingsComponent = 0.3 * ratingsNormalized;
   
-  // Inventory accuracy: higher is better
-  const inventoryScore = metrics.inventoryAccuracy;
-  
-  // Weighted average (returns and delivery are most important)
-  const weights = {
-    returnRate: 0.35,
-    delivery: 0.30,
-    cancellation: 0.20,
-    inventory: 0.15,
-  };
-  
-  const score =
-    returnRateScore * weights.returnRate +
-    deliveryScore * weights.delivery +
-    cancellationScore * weights.cancellation +
-    inventoryScore * weights.inventory;
+  // Total quality score (0-1 range)
+  const score = returnRateComponent + deliveryComponent + ratingsComponent;
   
   return {
-    score: Math.round(score * 100) / 100,
+    score: Math.max(0, Math.min(1, Math.round(score * 1000) / 1000)), // Clamp to 0-1, 3 decimal places
     breakdown: {
-      returnRateScore: Math.round(returnRateScore * 100) / 100,
-      deliveryScore: Math.round(deliveryScore * 100) / 100,
-      cancellationScore: Math.round(cancellationScore * 100) / 100,
-      inventoryScore: Math.round(inventoryScore * 100) / 100,
+      returnRateComponent: Math.round(returnRateComponent * 1000) / 1000,
+      deliveryComponent: Math.round(deliveryComponent * 1000) / 1000,
+      ratingsComponent: Math.round(ratingsComponent * 1000) / 1000,
     },
   };
 }
 
 /**
- * Calculate time decay factor for token emission
- * Emission decreases over time to create scarcity
+ * Calculate seller pool using PDF formula (10.2)
+ * Tseller_pool(t) = Sbase · exp(−δ · (t − tlaunch))
+ * Where t is in years, δ = 0.15
  */
-export function calculateTimeDecayFactor(monthsOnPlatform: number): number {
-  // Exponential decay: emission decreases by TIME_DECAY_RATE per month
-  return Math.max(0.1, Math.exp(-TIME_DECAY_RATE * monthsOnPlatform));
+export function calculateSellerPool(yearsSinceLaunch: number): number {
+  // Exponential decay: Sbase · exp(-δ · years)
+  return SBASE * Math.exp(-DELTA * yearsSinceLaunch);
 }
 
 /**
- * Calculate quality multiplier
- * Higher quality scores get more tokens
+ * Calculate time decay factor (normalized, for display purposes)
  */
-export function calculateQualityMultiplier(qualityScore: number): number {
-  if (qualityScore < MIN_QUALITY_SCORE) {
-    return 0; // No tokens if quality is too low
-  }
-  
-  // Linear scaling from 0.5x to 2.0x based on quality score
-  const minMultiplier = 0.5;
-  const maxMultiplier = 2.0;
-  const normalizedScore = (qualityScore - MIN_QUALITY_SCORE) / (100 - MIN_QUALITY_SCORE);
-  
-  return minMultiplier + normalizedScore * (maxMultiplier - minMultiplier);
+export function calculateTimeDecayFactor(yearsSinceLaunch: number): number {
+  // Returns the decay factor as a ratio (0-1)
+  return Math.exp(-DELTA * yearsSinceLaunch);
 }
 
 /**
- * Calculate penalties for poor performance
+ * Calculate sales share: total_sales_s / total_market_sales
  */
-export function calculatePenalties(metrics: SellerMetrics): number {
-  let penalties = 0;
-  
-  // Penalty for high return rate
-  if (metrics.returnRate > PENALTY_THRESHOLD_RETURNS) {
-    const excessReturns = metrics.returnRate - PENALTY_THRESHOLD_RETURNS;
-    penalties += excessReturns * 5; // 5 tokens per percentage point above threshold
-  }
-  
-  // Penalty for high cancellation rate
-  if (metrics.cancellationRate > PENALTY_THRESHOLD_CANCELLATIONS) {
-    const excessCancellations = metrics.cancellationRate - PENALTY_THRESHOLD_CANCELLATIONS;
-    penalties += excessCancellations * 3; // 3 tokens per percentage point above threshold
-  }
-  
-  return penalties;
-}
-
-/**
- * Calculate base emission based on sales volume
- */
-export function calculateBaseEmission(
-  monthlySalesVolume: number,
-  timeDecayFactor: number
+export function calculateSalesShare(
+  sellerSales: number,
+  totalMarketSales: number
 ): number {
-  const baseEmission = monthlySalesVolume * BASE_EMISSION_PER_ORDER;
-  return baseEmission * timeDecayFactor;
+  if (totalMarketSales === 0) return 0;
+  return sellerSales / totalMarketSales;
 }
 
 /**
  * Generate improvement suggestions based on metrics
  */
-export function generateSuggestions(metrics: SellerMetrics): string[] {
+export function generateSuggestions(metrics: SellerMetrics, qualityScore: number): string[] {
   const suggestions: string[] = [];
   
-  if (metrics.returnRate > 10) {
+  if (qualityScore < MIN_QUALITY_SCORE) {
     suggestions.push(
-      `Снизьте процент возвратов с ${metrics.returnRate.toFixed(1)}% до 10% - это увеличит токены на ${Math.round((metrics.returnRate - 10) * 2 * 0.35)}%`
+      `⚠️ Ваш балл качества ${(qualityScore * 100).toFixed(1)}% ниже минимума ${(MIN_QUALITY_SCORE * 100)}%. Вы не получите токены. Улучшите показатели!`
+    );
+  }
+  
+  if (metrics.returnRate > 10) {
+    const impact = (metrics.returnRate - 10) * 0.004; // 0.4 weight * 0.01 per %
+    suggestions.push(
+      `Снизьте процент возвратов с ${metrics.returnRate.toFixed(1)}% до 10% - это увеличит балл качества на ${(impact * 100).toFixed(2)}%`
     );
   }
   
   if (metrics.onTimeDeliveryRate < 95) {
+    const impact = (95 - metrics.onTimeDeliveryRate) * 0.003; // 0.3 weight * 0.01 per %
     suggestions.push(
-      `Улучшите доставку в срок с ${metrics.onTimeDeliveryRate.toFixed(1)}% до 95% - это добавит ${Math.round((95 - metrics.onTimeDeliveryRate) * 0.30)}% к качеству`
+      `Улучшите доставку в срок с ${metrics.onTimeDeliveryRate.toFixed(1)}% до 95% - это добавит ${(impact * 100).toFixed(2)}% к баллу качества`
     );
   }
   
-  if (metrics.cancellationRate > 5) {
+  if (metrics.ratings < 90) {
+    const impact = (90 - metrics.ratings) * 0.003; // 0.3 weight * 0.01 per %
     suggestions.push(
-      `Снизьте отмены с ${metrics.cancellationRate.toFixed(1)}% до 5% - это уменьшит штрафы на ${Math.round((metrics.cancellationRate - 5) * 3)} токенов`
-    );
-  }
-  
-  if (metrics.inventoryAccuracy < 98) {
-    suggestions.push(
-      `Повысьте точность остатков с ${metrics.inventoryAccuracy.toFixed(1)}% до 98% - это улучшит общий балл качества`
+      `Повысьте рейтинг с ${metrics.ratings.toFixed(1)}% до 90% - это добавит ${(impact * 100).toFixed(2)}% к баллу качества`
     );
   }
   
@@ -173,44 +138,81 @@ export function generateSuggestions(metrics: SellerMetrics): string[] {
 }
 
 /**
- * Main calculation function
+ * Main calculation function using PDF formula (10.2)
+ * Tmint_seller(s, t) = Tseller_pool(t) · (Wsales · sales_shares + Wquality · quality_scores)
  */
 export function calculateTokenRewards(metrics: SellerMetrics): CalculationResult {
-  // Calculate quality score
+  // Convert months to years for time decay calculation
+  const yearsSinceLaunch = metrics.monthsOnPlatform / 12;
+  
+  // Calculate seller pool: Tseller_pool(t) = Sbase · exp(−δ · (t − tlaunch))
+  const sellerPool = calculateSellerPool(yearsSinceLaunch);
+  const timeDecayFactor = calculateTimeDecayFactor(yearsSinceLaunch);
+  
+  // Calculate quality score (0-1 range)
   const { score: qualityScore, breakdown } = calculateQualityScore(metrics);
   
-  // Calculate time decay
-  const timeDecayFactor = calculateTimeDecayFactor(metrics.monthsOnPlatform);
+  // Check minimum quality threshold
+  if (qualityScore < MIN_QUALITY_SCORE) {
+    // No tokens if quality is below threshold
+    return {
+      qualityScore,
+      weeklyTokenReward: 0,
+      monthlyTokenReward: 0,
+      sellerPool: Math.round(sellerPool * 100) / 100,
+      salesShare: 0,
+      timeDecayFactor: Math.round(timeDecayFactor * 1000) / 1000,
+      projection6Months: 0,
+      projection12Months: 0,
+      breakdown,
+      suggestions: generateSuggestions(metrics, qualityScore),
+    };
+  }
   
-  // Calculate base emission
-  const baseEmission = calculateBaseEmission(metrics.monthlySalesVolume, timeDecayFactor);
+  // Calculate sales share: total_sales_s / total_market_sales
+  const totalMarketSales = metrics.totalMarketSales || 
+    (metrics.monthlySalesVolume * DEFAULT_MARKET_SALES_MULTIPLIER);
+  const salesShare = calculateSalesShare(metrics.monthlySalesVolume, totalMarketSales);
   
-  // Calculate quality multiplier
-  const qualityMultiplier = calculateQualityMultiplier(qualityScore);
+  // Calculate weekly token reward using formula:
+  // Tmint_seller(s, t) = Tseller_pool(t) · (Wsales · sales_shares + Wquality · quality_scores)
+  // Note: This is weekly distribution, so we divide the pool by weeks in a year
+  const weeksInYear = 52;
+  const weeklyPool = sellerPool / weeksInYear;
   
-  // Calculate penalties
-  const penalties = calculatePenalties(metrics);
+  const allocationFactor = WSALES * salesShare + WQUALITY * qualityScore;
+  const weeklyTokenReward = weeklyPool * allocationFactor;
   
-  // Calculate monthly token reward
-  const monthlyTokenReward = Math.max(
-    0,
-    baseEmission * qualityMultiplier - penalties
-  );
+  // Calculate monthly reward (approximate)
+  const monthlyTokenReward = weeklyTokenReward * WEEKS_PER_MONTH;
   
-  // Calculate projections
-  const projection6Months = monthlyTokenReward * 6;
-  const projection12Months = monthlyTokenReward * 12;
+  // Calculate projections (accounting for pool decay over time)
+  let projection6Months = 0;
+  let projection12Months = 0;
+  
+  for (let month = 1; month <= 12; month++) {
+    const futureYears = (metrics.monthsOnPlatform + month) / 12;
+    const futurePool = calculateSellerPool(futureYears);
+    const futureWeeklyPool = futurePool / weeksInYear;
+    const futureWeeklyReward = futureWeeklyPool * allocationFactor;
+    const futureMonthlyReward = futureWeeklyReward * WEEKS_PER_MONTH;
+    
+    if (month <= 6) {
+      projection6Months += futureMonthlyReward;
+    }
+    projection12Months += futureMonthlyReward;
+  }
   
   // Generate suggestions
-  const suggestions = generateSuggestions(metrics);
+  const suggestions = generateSuggestions(metrics, qualityScore);
   
   return {
-    qualityScore,
+    qualityScore: Math.round(qualityScore * 1000) / 1000,
+    weeklyTokenReward: Math.round(weeklyTokenReward * 100) / 100,
     monthlyTokenReward: Math.round(monthlyTokenReward * 100) / 100,
-    penalties: Math.round(penalties * 100) / 100,
-    baseEmission: Math.round(baseEmission * 100) / 100,
-    qualityMultiplier: Math.round(qualityMultiplier * 100) / 100,
-    timeDecayFactor: Math.round(timeDecayFactor * 100) / 100,
+    sellerPool: Math.round(sellerPool * 100) / 100,
+    salesShare: Math.round(salesShare * 10000) / 10000, // 4 decimal places for small shares
+    timeDecayFactor: Math.round(timeDecayFactor * 1000) / 1000,
     projection6Months: Math.round(projection6Months * 100) / 100,
     projection12Months: Math.round(projection12Months * 100) / 100,
     breakdown,

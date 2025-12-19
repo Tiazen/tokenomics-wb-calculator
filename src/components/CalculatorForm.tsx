@@ -114,60 +114,31 @@ export function CalculatorForm({ metrics, onMetricsChange }: CalculatorFormProps
           />
         </div>
 
-        {/* Cancellation Rate */}
+        {/* Ratings */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Label htmlFor="cancellation-rate">Процент отмен</Label>
+              <Label htmlFor="ratings">Рейтинг</Label>
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Процент отмененных заказов. Чем ниже, тем лучше.</p>
+                    <p>Рейтинг продавца от покупателей (0-100%). Чем выше, тем лучше.</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
-            <span className="text-sm font-medium">{metrics.cancellationRate.toFixed(1)}%</span>
+            <span className="text-sm font-medium">{metrics.ratings.toFixed(1)}%</span>
           </div>
           <Slider
-            id="cancellation-rate"
-            min={0}
-            max={30}
-            step={0.1}
-            value={[metrics.cancellationRate]}
-            onValueChange={([value]: number[]) => updateMetric("cancellationRate", value)}
-            className="w-full"
-          />
-        </div>
-
-        {/* Inventory Accuracy */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="inventory-accuracy">Точность остатков</Label>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Точность учета товарных остатков. Чем выше, тем лучше.</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
-            <span className="text-sm font-medium">{metrics.inventoryAccuracy.toFixed(1)}%</span>
-          </div>
-          <Slider
-            id="inventory-accuracy"
+            id="ratings"
             min={0}
             max={100}
             step={0.1}
-            value={[metrics.inventoryAccuracy]}
-            onValueChange={([value]: number[]) => updateMetric("inventoryAccuracy", value)}
+            value={[metrics.ratings]}
+            onValueChange={([value]: number[]) => updateMetric("ratings", value)}
             className="w-full"
           />
         </div>

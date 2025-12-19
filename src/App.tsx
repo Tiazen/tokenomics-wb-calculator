@@ -10,8 +10,7 @@ const defaultMetrics: SellerMetrics = {
   monthlySalesVolume: 1000,
   returnRate: 8,
   onTimeDeliveryRate: 92,
-  cancellationRate: 3,
-  inventoryAccuracy: 95,
+  ratings: 95,
   monthsOnPlatform: 6,
 }
 

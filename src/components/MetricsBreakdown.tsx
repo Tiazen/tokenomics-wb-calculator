@@ -20,30 +20,34 @@ export function MetricsBreakdown({ result }: MetricsBreakdownProps) {
       <CardContent className="space-y-4">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Базовая эмиссия</span>
-            <span className="text-sm font-medium">{result.baseEmission.toFixed(2)}</span>
+            <span className="text-sm text-muted-foreground">Пул продавцов</span>
+            <span className="text-sm font-medium">{result.sellerPool.toLocaleString()} токенов</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Коэффициент времени</span>
-            <Badge variant="secondary">{result.timeDecayFactor.toFixed(2)}x</Badge>
+            <Badge variant="secondary">{(result.timeDecayFactor * 100).toFixed(1)}%</Badge>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Множитель качества</span>
-            <Badge variant={result.qualityMultiplier >= 1 ? "default" : "secondary"}>
-              {result.qualityMultiplier.toFixed(2)}x
+            <span className="text-sm text-muted-foreground">Доля продаж</span>
+            <Badge variant="secondary">{(result.salesShare * 100).toFixed(4)}%</Badge>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Балл качества</span>
+            <Badge variant={result.qualityScore >= 0.6 ? "default" : "destructive"}>
+              {(result.qualityScore * 100).toFixed(1)}%
             </Badge>
           </div>
-          {result.penalties > 0 && (
-            <div className="flex items-center justify-between text-destructive">
-              <span className="text-sm">Штрафы</span>
-              <span className="text-sm font-medium">-{result.penalties.toFixed(2)}</span>
-            </div>
-          )}
         </div>
 
         <Separator />
 
         <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Недельная награда</span>
+            <span className="text-lg font-bold text-primary">
+              {result.weeklyTokenReward.toFixed(2)} токенов
+            </span>
+          </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Месячная награда</span>
             <span className="text-lg font-bold text-primary">
@@ -52,7 +56,7 @@ export function MetricsBreakdown({ result }: MetricsBreakdownProps) {
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Info className="h-3 w-3" />
-            <span>При текущих показателях</span>
+            <span>Распределение еженедельно</span>
           </div>
         </div>
 
